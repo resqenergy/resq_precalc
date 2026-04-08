@@ -11,6 +11,7 @@ This repository contains a couple of precalculation scripts in the ResQEnergy pr
 6. A helping script to modify oemof-B3 weatherdata with `Testreferenzjahre`-ts: `modify_oemof-B3_weatherdata.py`
 7. Calculation of the installed capacity of solarthermal (st) plants in Adlershof without Wohnen am Campus for [results on installed capacities in Adlershof](https://rlinstitutde.sharepoint.com/:x:/s/427_ResQEnergy-427_internal_Team/IQB6qhQs-ZtISo_AnRz65XOrAbqwtfIi4H6D1Drv78B2ZcA?e=RVOJH9) `calc_st_kWh.py`
 8. Calculation of the infrared radiation in the test reference years (try) `get_infrared_radiation_from_try.py`
+9. Calculation of waste heat profiles of industry and BTB waste heat high temperature (ht), medium temperature (mt) and low temperature (nt) `get_waste_heat_profiles.py`
 
 raw_data
 ========
