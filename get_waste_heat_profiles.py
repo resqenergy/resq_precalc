@@ -22,6 +22,13 @@ centralheatprofile_path = os.path.join(
     "spaceHeatProfileNorm_central.csv"
 )
 
+centralcoolprofile_path = os.path.join(
+    THIS_PATH,
+    "raw_data",
+    "Abwaerme_Profile",
+    "CoolProfileNorm_central.csv"
+)
+
 output_dir = os.path.join(THIS_PATH, "results", "Abwaerme_Profile")
 os.makedirs(output_dir, exist_ok=True)
 
@@ -30,11 +37,14 @@ os.makedirs(output_dir, exist_ok=True)
 # =========================
 abwaermepot = pd.read_csv(abwaermepot_path, sep=",")
 centralheatprofile = pd.read_csv(centralheatprofile_path, sep=",")
+centralcoolprofile = pd.read_csv(centralcoolprofile_path, sep=",")
 
 # =========================
-# TIME INDEX FROM CENTRAL PROFILE
+# TIME INDEX (FROM HEAT PROFILE)
 # =========================
 centralheatprofile["datetime"] = pd.to_datetime(centralheatprofile["datetime"])
+centralcoolprofile["datetime"] = pd.to_datetime(centralcoolprofile["datetime"])
+
 df_time = pd.DataFrame(index=centralheatprofile["datetime"])
 
 df_time["month"] = df_time.index.month
@@ -42,10 +52,13 @@ df_time["hour"] = df_time.index.hour
 df_time["weekday"] = df_time.index.weekday
 
 # =========================
-# CENTRAL PROFILE
+# CENTRAL PROFILES
 # =========================
-central = centralheatprofile["spaceHeatProfileNorm"].values
-central = central / central.sum()
+central_heat = centralheatprofile["spaceHeatProfileNorm"].values
+central_heat = central_heat / central_heat.sum()
+
+central_cool = centralcoolprofile["CoolProfileNorm"].values
+central_cool = central_cool / central_cool.sum()
 
 # =========================
 # TEMPERATURE CLASSIFICATION
@@ -139,13 +152,19 @@ def generate_profile(row):
     total_energy = row["Wärmemenge pro Jahr (in kWh/a)"]
     profile = np.zeros(len(df_time))
 
+    # 🔥 Auswahl Profilbasis
+    if row["Temp_Level"] == "NT":
+        base_profile_global = central_cool
+    else:
+        base_profile_global = central_heat
+
     for m in range(1, 13):
         month_mask = (df_time["month"] == m).values
 
-        base = central * availability * month_mask
+        base = base_profile_global * availability * month_mask
 
         if base.sum() == 0:
-            base = central * month_mask
+            base = base_profile_global * month_mask
 
         if base.sum() == 0:
             base = month_mask.astype(float)
@@ -212,11 +231,18 @@ save_profile(nt_profile, "NT")
 # =========================
 # PLOTS
 # =========================
-central_scaled = central * (ht_profile.sum() + mt_profile.sum() + nt_profile.sum())
+central_heat_scaled = central_heat * (ht_profile.sum() + mt_profile.sum())
+central_cool_scaled = central_cool * nt_profile.sum()
 
 plt.figure()
-plt.plot(df_time.index, central_scaled)
+plt.plot(df_time.index, central_heat_scaled)
 plt.title("Central Heat Profile")
+plt.grid()
+plt.show()
+
+plt.figure()
+plt.plot(df_time.index, central_cool_scaled)
+plt.title("Central Cooling Profile")
 plt.grid()
 plt.show()
 
@@ -235,15 +261,6 @@ plt.show()
 plt.figure()
 plt.plot(df_time.index, nt_profile)
 plt.title("NT Profile")
-plt.grid()
-plt.show()
-
-plt.figure()
-plt.plot(df_time.index, ht_profile)
-plt.plot(df_time.index, mt_profile)
-plt.plot(df_time.index, nt_profile)
-plt.plot(df_time.index, central_scaled, linestyle="--")
-plt.title("Comparison")
 plt.grid()
 plt.show()
 
