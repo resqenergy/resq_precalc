@@ -15,6 +15,13 @@ abwaermepot_path = os.path.join(
     "Abwaermepotenzial_Adlershof_BfEE.csv"
 )
 
+# TODO: We use the dummy central heat and cooling profile (centralheatprofile and
+#  centralcoolprofile) here for now.
+#  For the model, as soon as the final demand profiles are generated
+#  (Heat = RW + WW, Cool = Klima + Process) per 2035 and 2050 and Testreferenzjahr
+#  the respective profile needs to be read in here. So the following code works only
+#  for this one dummy time series scenario so far.
+
 centralheatprofile_path = os.path.join(
     THIS_PATH,
     "raw_data",
@@ -206,6 +213,8 @@ nt_profile, nt_energy = aggregate_profiles(abwaermepot, "NT")
 
 # =========================
 # VALIDATION
+# Todo: This section is only for validation and debugging reasons.
+#  Can be removed in model use.
 # =========================
 def validate(profile, expected, name):
     print(f"{name}: {profile.sum():.2f} / {expected:.2f} kWh")
@@ -230,6 +239,8 @@ save_profile(nt_profile, "NT")
 
 # =========================
 # PLOTS
+# Todo: This section is only for validation and debugging reasons.
+#  Can be removed in model use.
 # =========================
 central_heat_scaled = central_heat * (ht_profile.sum() + mt_profile.sum())
 central_cool_scaled = central_cool * nt_profile.sum()
