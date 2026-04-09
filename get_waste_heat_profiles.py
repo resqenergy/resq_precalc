@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+import re
 
 # =========================
 # PATHS
@@ -16,7 +17,7 @@ abwaermepot_path = os.path.join(
 )
 
 # TODO: We use the dummy central heat and cooling profile (centralheatprofile and
-#  centralcoolprofile) here for now.
+#  centralcoolprofile) here for now. Masking as scenario 2050, extr1, rcp85
 #  For the model, as soon as the final demand profiles are generated
 #  (Heat = RW + WW, Cool = Klima + Process) per 2035 and 2050 and Testreferenzjahr
 #  the respective profile needs to be read in here. So the following code works only
@@ -26,14 +27,24 @@ centralheatprofile_path = os.path.join(
     THIS_PATH,
     "raw_data",
     "Abwaerme_Profile",
-    "spaceHeatProfileNorm_central.csv"
+    "demand_profiles",
+    "2050_extr1_rcp85_central_HeatProfileNorm.csv"
 )
 
 centralcoolprofile_path = os.path.join(
     THIS_PATH,
     "raw_data",
     "Abwaerme_Profile",
-    "CoolProfileNorm_central.csv"
+    "demand_profiles",
+    "2050_extr1_rcp85_central_CoolProfileNorm.csv"
+)
+
+wasteheatamounts_path = os.path.join(
+    THIS_PATH,
+    "raw_data",
+    "Abwaerme_Profile",
+    "waste_heat_amounts",
+    "waste_heats.csv"
 )
 
 output_dir = os.path.join(THIS_PATH, "results", "Abwaerme_Profile")
@@ -45,9 +56,23 @@ os.makedirs(output_dir, exist_ok=True)
 abwaermepot = pd.read_csv(abwaermepot_path, sep=",")
 centralheatprofile = pd.read_csv(centralheatprofile_path, sep=",")
 centralcoolprofile = pd.read_csv(centralcoolprofile_path, sep=",")
+waste_heats = pd.read_csv(wasteheatamounts_path, sep=",")
 
 # =========================
-# TIME INDEX (FROM HEAT PROFILE)
+# YEAR EXTRACTION
+# =========================
+def extract_year_from_filename(path):
+    match = re.search(r"(20\d{2})", os.path.basename(path))
+    if match:
+        return match.group(1)
+    else:
+        raise ValueError("Kein Jahr im Dateinamen gefunden!")
+
+year = extract_year_from_filename(centralheatprofile_path)
+print(f"Verwendetes Jahr: {year}")
+
+# =========================
+# TIME INDEX
 # =========================
 centralheatprofile["datetime"] = pd.to_datetime(centralheatprofile["datetime"])
 centralcoolprofile["datetime"] = pd.to_datetime(centralcoolprofile["datetime"])
@@ -159,7 +184,6 @@ def generate_profile(row):
     total_energy = row["Wärmemenge pro Jahr (in kWh/a)"]
     profile = np.zeros(len(df_time))
 
-    # 🔥 Auswahl Profilbasis
     if row["Temp_Level"] == "NT":
         base_profile_global = central_cool
     else:
@@ -186,11 +210,7 @@ def generate_profile(row):
 # =========================
 # GENERATE PROFILES
 # =========================
-profiles = []
-
-for _, row in abwaermepot.iterrows():
-    profiles.append(generate_profile(row))
-
+profiles = [generate_profile(row) for _, row in abwaermepot.iterrows()]
 abwaermepot["profile"] = profiles
 
 # =========================
@@ -198,18 +218,35 @@ abwaermepot["profile"] = profiles
 # =========================
 def aggregate_profiles(df, level):
     subset = df[df["Temp_Level"] == level]
-
     if len(subset) == 0:
-        return np.zeros(len(df_time)), 0
+        return np.zeros(len(df_time))
+    return np.sum(subset["profile"].tolist(), axis=0)
 
-    profile = np.sum(subset["profile"].tolist(), axis=0)
-    energy_sum = subset["Wärmemenge pro Jahr (in kWh/a)"].sum()
+ht_profile = aggregate_profiles(abwaermepot, "HT")
+mt_profile = aggregate_profiles(abwaermepot, "MT")
+nt_profile = aggregate_profiles(abwaermepot, "NT")
 
-    return profile, energy_sum
+# =========================
+# TARGET VALUES FROM waste_heats
+# =========================
+def get_target(name):
+    return waste_heats.loc[waste_heats["Abwärme"] == name, year].values[0]
 
-ht_profile, ht_energy = aggregate_profiles(abwaermepot, "HT")
-mt_profile, mt_energy = aggregate_profiles(abwaermepot, "MT")
-nt_profile, nt_energy = aggregate_profiles(abwaermepot, "NT")
+ht_target = get_target("BTB-Abwärmerückgewinnung (Hochtemperatur)")
+mt_target = get_target("Chemie + Industrie + BTB (Mitteltemperatur)")
+nt_target = get_target("Rechenzentrum + BTB (Niedertemperatur) + Industrie (Niedertemperatur)")
+
+# =========================
+# SCALING
+# =========================
+def scale_profile(profile, target):
+    if profile.sum() == 0:
+        return profile
+    return profile * (target / profile.sum())
+
+ht_profile = scale_profile(ht_profile, ht_target)
+mt_profile = scale_profile(mt_profile, mt_target)
+nt_profile = scale_profile(nt_profile, nt_target)
 
 # =========================
 # VALIDATION
@@ -219,9 +256,9 @@ nt_profile, nt_energy = aggregate_profiles(abwaermepot, "NT")
 def validate(profile, expected, name):
     print(f"{name}: {profile.sum():.2f} / {expected:.2f} kWh")
 
-validate(ht_profile, ht_energy, "HT")
-validate(mt_profile, mt_energy, "MT")
-validate(nt_profile, nt_energy, "NT")
+validate(ht_profile, ht_target, "HT")
+validate(mt_profile, mt_target, "MT")
+validate(nt_profile, nt_target, "NT")
 
 # =========================
 # SAVE
@@ -242,21 +279,6 @@ save_profile(nt_profile, "NT")
 # Todo: This section is only for validation and debugging reasons.
 #  Can be removed in model use.
 # =========================
-central_heat_scaled = central_heat * (ht_profile.sum() + mt_profile.sum())
-central_cool_scaled = central_cool * nt_profile.sum()
-
-plt.figure()
-plt.plot(df_time.index, central_heat_scaled)
-plt.title("Central Heat Profile")
-plt.grid()
-plt.show()
-
-plt.figure()
-plt.plot(df_time.index, central_cool_scaled)
-plt.title("Central Cooling Profile")
-plt.grid()
-plt.show()
-
 plt.figure()
 plt.plot(df_time.index, ht_profile)
 plt.title("HT Profile")
